@@ -1,0 +1,475 @@
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  email          String          @unique
+  name           String?
+  role           Role            @default(STAFF)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  password       String
+  payments       Payment[]
+  appointments   Appointment[]
+  staffSlots     StaffSlot[]
+  stockMovements StockMovement[]
+}
+
+model Store {
+  id         Int             @id @default(autoincrement())
+  name       String
+  department Department
+  stocks     Stock[]
+  moves      StockMovement[]
+}
+
+model Item {
+  id               Int             @id @default(autoincrement())
+  sku              String          @unique
+  name             String
+  category         String?
+  unit             Unit
+  vatRate          Int
+  costPrice        Decimal
+  salePriceDefault Decimal
+  isActive         Boolean         @default(true)
+  isMenu           Boolean         @default(false)
+  menuDept         Department?
+  orderLines       OrderLine[]
+  stocks           Stock[]
+  stockMovements   StockMovement[]
+}
+
+model Stock {
+  id        Int      @id @default(autoincrement())
+  storeId   Int
+  itemId    Int
+  qty       Int      @default(0)
+  minQty    Int      @default(0)
+  updatedAt DateTime @updatedAt
+  maxQty    Int      @default(100)
+  item      Item     @relation(fields: [itemId], references: [id])
+  store     Store    @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, itemId], name: "stock_unique")
+}
+
+model StockMovement {
+  id        Int           @id @default(autoincrement())
+  storeId   Int
+  itemId    Int
+  qty       Int
+  type      StockMoveType
+  reason    String?
+  userId    Int?
+  createdAt DateTime      @default(now())
+  item      Item          @relation(fields: [itemId], references: [id])
+  store     Store         @relation(fields: [storeId], references: [id])
+  user      User?         @relation(fields: [userId], references: [id])
+}
+
+model Room {
+  id           Int               @id @default(autoincrement())
+  number       String            @unique
+  type         String
+  status       RoomStatus
+  reservations Reservation[]
+  maintenances RoomMaintenance[]
+}
+
+model Guest {
+  id            Int           @id @default(autoincrement())
+  fullName      String
+  phone         String?
+  email         String?
+  notes         String?
+  address       String?
+  birthDate     DateTime?
+  company       String?
+  loyaltyPoints Int           @default(0)
+  loyaltyTier   LoyaltyTier   @default(Bronze)
+  nationality   String?
+  segment       Segment       @default(leisure)
+  reservations  Reservation[]
+}
+
+model Reservation {
+  id        Int               @id @default(autoincrement())
+  roomId    Int
+  guestId   Int
+  checkIn   DateTime
+  checkOut  DateTime
+  status    ReservationStatus
+  rate      Int
+  rateMode  String            @default("per_night")
+  createdAt DateTime          @default(now())
+  folio     Folio?
+  guest     Guest             @relation(fields: [guestId], references: [id])
+  room      Room              @relation(fields: [roomId], references: [id])
+}
+
+model Folio {
+  id            Int           @id @default(autoincrement())
+  reservationId Int           @unique
+  total         Int           @default(0)
+  balance       Int           @default(0)
+  closedAt      DateTime?
+  reservation   Reservation   @relation(fields: [reservationId], references: [id])
+  charges       FolioCharge[]
+  payments      Payment[]
+}
+
+model FolioCharge {
+  id          Int        @id @default(autoincrement())
+  folioId     Int
+  description String
+  qty         Int        @default(1)
+  unitPrice   Int
+  department  Department
+  createdAt   DateTime   @default(now())
+  folio       Folio      @relation(fields: [folioId], references: [id])
+}
+
+model DiningTable {
+  id         Int        @id @default(autoincrement())
+  code       String     @unique
+  department Department
+  orders     Order[]
+}
+
+model Order {
+  id       Int          @id @default(autoincrement())
+  dept     Department
+  tableId  Int?
+  status   OrderStatus  @default(open)
+  openedAt DateTime     @default(now())
+  closedAt DateTime?
+  tabId    Int?
+
+  discountAmount Int          @default(0)
+  discountReason String?
+  discountType   DiscountType @default(fixed)
+
+  tab      Tab?         @relation(fields: [tabId], references: [id])
+  table    DiningTable? @relation(fields: [tableId], references: [id])
+  lines    OrderLine[]
+  payments Payment[]
+}
+
+model OrderLine {
+  id         Int        @id @default(autoincrement())
+  orderId    Int
+  itemId     Int
+  itemName   String
+  itempreparationTime Int?
+  qty        Int
+  unitPrice  Int
+  fireStatus FireStatus @default(commanded)
+  firedAt    DateTime   @default(now())
+  comment    String?
+  item       Item       @relation(fields: [itemId], references: [id])
+  order      Order      @relation(fields: [orderId], references: [id])
+}
+
+model Tab {
+  id           Int        @id @default(autoincrement())
+  dept         Department @default(pub)
+  customerName String
+  status       TabStatus  @default(open)
+  balance      Int        @default(0)
+  orders       Order[]
+  payments     Payment[]
+}
+
+model Appointment {
+  id          Int               @id @default(autoincrement())
+  clientName  String
+  serviceName String
+  start       DateTime
+  durationMin Int
+  status      AppointmentStatus @default(booked)
+  price       Int
+  therapistId Int?
+  createdAt   DateTime          @default(now())
+  room        String?
+  therapist   User?             @relation(fields: [therapistId], references: [id])
+}
+
+model CashSession {
+  id            Int        @id @default(autoincrement())
+  department    Department
+  openedBy      String
+  openedAt      DateTime   @default(now())
+  openingFloat  Int
+  status        CashStatus @default(open)
+  closedAt      DateTime?
+  closingAmount Int?
+  payments      Payment[]
+}
+
+model Payment {
+  id             Int           @id @default(autoincrement())
+  amount         Int
+  method         PaymentMethod  
+  receivedAmount Int?
+  receivedAt     DateTime      @default(now())
+  department     Department
+
+  orderId        Int?
+  folioId        Int?
+  tabId          Int?
+  cashSessionId  Int?
+
+  reference      String?
+
+  operatorId     Int?
+  operatorName   String?
+  operator       User?         @relation(fields: [operatorId], references: [id])
+
+  cashSession    CashSession?  @relation(fields: [cashSessionId], references: [id])
+  folio          Folio?        @relation(fields: [folioId], references: [id])
+  order          Order?        @relation(fields: [orderId], references: [id])
+  tab            Tab?          @relation(fields: [tabId], references: [id])
+}
+
+model Invoice {
+  id            Int           @id @default(autoincrement())
+  number        String        @unique
+  date          DateTime      @default(now())
+  department    Department
+  customerName  String?
+  totalHT       Int
+  totalTVA      Int
+  totalTTC      Int
+  sourceOrderId Int?
+  sourceFolioId Int?
+  pdfUrl        String?
+  lines         InvoiceLine[]
+}
+
+model InvoiceLine {
+  id          Int     @id @default(autoincrement())
+  invoiceId   Int
+  description String
+  qty         Int
+  unitPrice   Int
+  vatRate     Int
+  total       Int
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+}
+
+model TaxRate {
+  id   Int    @id @default(autoincrement())
+  name String
+  rate Int
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  entity      String
+  entityId    Int?
+  action      String
+  performedBy String?
+  createdAt   DateTime @default(now())
+  data        Json?
+}
+
+model Notification {
+  id            Int      @id @default(autoincrement())
+  title         String
+  body          String?
+  type          String   @default("info")   // event type
+  targetRoles   String?  // JSON array ex: '["admin","cashier"]'
+  targetUserId  Int?
+  meta          String?  // JSON extra data
+  read          Boolean  @default(false)
+  dismissedBy  String?
+  createdAt     DateTime @default(now())
+}
+
+model Service {
+  id          Int        @id @default(autoincrement())
+  name        String
+  durationMin Int
+  dept        Department @default(spa)
+  salePrice   Int
+  active      Boolean    @default(true)
+}
+
+model StaffSlot {
+  id        Int      @id @default(autoincrement())
+  staffId   Int
+  start     DateTime
+  end       DateTime
+  status    String   @default("available")
+  createdAt DateTime @default(now())
+  staff     User     @relation(fields: [staffId], references: [id])
+}
+
+model Dish {
+  id              Int             @id @default(autoincrement())
+  name            String          @unique
+  description     String?
+  category        DishCategory
+  preparationTime Int
+  price           Int
+  difficulty      DifficultyLevel
+  isActive        Boolean         @default(true)
+  ingredients     Json
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model RoomMaintenance {
+  id        Int      @id @default(autoincrement())
+  roomId    Int
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+  status    MaintenanceStatus @default(scheduled)
+  createdAt DateTime @default(now())
+
+  room      Room @relation(fields: [roomId], references: [id])
+}
+
+enum DiscountType {
+  fixed
+  percent
+}
+
+enum MaintenanceStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum Department {
+  hotel
+  restaurant
+  pub
+  spa
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  RECEPTION
+  HOUSEKEEPING
+  KITCHEN
+  WAITER
+  BARTENDER
+  CASHIER
+  GUEST
+  STAFF
+}
+
+enum Unit {
+  piece
+  kg
+  g
+  L
+  cl
+  ml
+}
+
+enum StockMoveType {
+  IN
+  OUT
+  ADJUST
+}
+
+enum RoomStatus {
+  available
+  occupied
+  cleaning
+  maintenance
+  out_of_order
+}
+
+enum ReservationStatus {
+  booked
+  checked_in
+  checked_out
+  cancelled
+  no_show
+}
+
+enum OrderStatus {
+  open
+  closed
+  cancelled
+}
+
+enum FireStatus {
+  commanded
+  preparing
+  ready
+  delivered
+  voided
+}
+
+enum TabStatus {
+  open
+  unpaid
+  paid
+}
+
+enum AppointmentStatus {
+  booked
+  waiting
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum CashStatus {
+  open
+  closed
+}
+
+enum PaymentMethod {
+  cash
+  card
+  mobile
+  bank
+}
+
+enum Segment {
+  vip
+  corporate
+  leisure
+  ota
+}
+
+enum LoyaltyTier {
+  Bronze
+  Silver
+  Gold
+  Platinum
+}
+
+enum DishCategory {
+  appetizer
+  main_course
+  dessert
+  beverage
+  side_dish
+  dejeuner
+  snack
+}
+
+enum DifficultyLevel {
+  easy
+  medium
+  hard
+}
