@@ -28,7 +28,7 @@ async function main() {
   for (let i = 0; i < total; i++) {
     const roleStr = roles[i] ?? roles[i % roles.length];
     const role = roleStr as Role;
-    const email = `${role.toLowerCase()}${i + 1}@mh.com`;
+    const email = `${role.toLowerCase()}${i + 1}@hda.com`;
     const name = `${role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()} ${i + 1}`;
 
     // Mot de passe connu et simple

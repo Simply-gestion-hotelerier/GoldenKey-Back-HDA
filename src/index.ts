@@ -25,6 +25,7 @@ async function bootstrap() {
     "http://localhost:8080",
     "https://goldenkey-front.vercel.app",
     "https://golden-key-front-vatola.vercel.app",
+    "https://goldenkey-front-hda-liard.vercel.app",
     ENV.DATABASE_URL?.replace(/\/$/, ""),
   ].filter(Boolean) as string[];
 
