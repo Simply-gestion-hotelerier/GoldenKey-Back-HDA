@@ -276,4 +276,117 @@ r.patch("/customers/:id", requireScope("reservations:write"), async (req, res) =
   });
 });
 
+// GET /crm/customers/:rawId/profile
+r.get("/customers/:rawId/profile", requireScope("reservations:read"), async (req, res) => {
+  const rawId = req.params.rawId; // ex: "hotel:42"
+
+  // On ne supporte la fiche complète que pour les guests hotel (FK réelle)
+  if (!rawId.startsWith("hotel:")) {
+    return res.status(400).json({ error: "Full profile only available for hotel guests" });
+  }
+
+  const guestId = Number(rawId.split(":")[1]);
+  if (isNaN(guestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const guest = await prisma.guest.findUnique({
+    where: { id: guestId },
+    include: {
+      reservations: {
+        orderBy: { checkIn: "desc" },
+        include: {
+          room: true,
+          folio: {
+            include: {
+              charges: { orderBy: { createdAt: "desc" } },
+              payments: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!guest) return res.status(404).json({ error: "Guest not found" });
+
+  // Fuzzy match spa par nom
+  const spaHistory = await prisma.appointment.findMany({
+    where: { clientName: { equals: guest.fullName, mode: "insensitive" } },
+    orderBy: { start: "desc" },
+    select: { id: true, serviceName: true, start: true, price: true, status: true, room: true },
+  });
+
+  // Fuzzy match bar par nom
+  const barHistory = await prisma.tab.findMany({
+    where: { customerName: { equals: guest.fullName, mode: "insensitive" } },
+    orderBy: { id: "desc" },
+    include: { payments: true, orders: { include: { lines: true } } },
+  });
+
+  // Fuzzy match restaurant par factures
+  const restHistory = await prisma.invoice.findMany({
+    where: { department: "restaurant", customerName: { equals: guest.fullName, mode: "insensitive" } },
+    orderBy: { date: "desc" },
+    include: { lines: true },
+  });
+
+  // Calculs statistiques
+  const hotelSpent = guest.reservations.reduce((sum, r) => {
+    return sum + (r.folio?.charges.reduce((s, c) => s + c.qty * c.unitPrice, 0) ?? 0);
+  }, 0);
+  const spaSpent = spaHistory.reduce((s, a) => s + a.price, 0);
+  const barSpent = barHistory.reduce((s, t) => s + t.payments.reduce((p, pay) => p + pay.amount, 0), 0);
+  const restSpent = restHistory.reduce((s, i) => s + i.totalTTC, 0);
+
+  res.json({
+    guest: {
+      id: guest.id,
+      fullName: guest.fullName,
+      email: guest.email,
+      phone: guest.phone,
+      address: guest.address,
+      birthDate: guest.birthDate,
+      nationality: guest.nationality,
+      company: guest.company,
+      notes: guest.notes,
+      segment: guest.segment,
+      loyaltyPoints: guest.loyaltyPoints,
+      loyaltyTier: guest.loyaltyTier,
+      createdAt: (guest as any).createdAt ?? null,
+    },
+    stats: {
+      totalSpent: hotelSpent + spaSpent + barSpent + restSpent,
+      hotelSpent,
+      spaSpent,
+      barSpent,
+      restSpent,
+      totalStays: guest.reservations.length,
+      totalSpaVisits: spaHistory.length,
+      totalBarVisits: barHistory.length,
+      totalRestVisits: restHistory.length,
+    },
+    hotelHistory: guest.reservations.map((r) => ({
+      id: r.id,
+      checkIn: r.checkIn,
+      checkOut: r.checkOut,
+      status: r.status,
+      roomNumber: r.room.number,
+      roomType: r.room.type,
+      rate: r.rate,
+      rateMode: r.rateMode,
+      charges: r.folio?.charges ?? [],
+      payments: r.folio?.payments ?? [],
+      folioTotal: r.folio?.charges.reduce((s, c) => s + c.qty * c.unitPrice, 0) ?? 0,
+    })),
+    spaHistory,
+    barHistory: barHistory.map((t) => ({
+      id: t.id,
+      status: t.status,
+      balance: t.balance,
+      totalPaid: t.payments.reduce((s, p) => s + p.amount, 0),
+      orders: t.orders,
+    })),
+    restHistory,
+  });
+});
+
 export default r;

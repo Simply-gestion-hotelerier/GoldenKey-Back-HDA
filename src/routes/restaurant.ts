@@ -72,7 +72,14 @@ r.post("/setup-dishes-items", async (req, res) => {
 });
 
 r.get("/tables", requireScope("orders:read"), async (_req, res) => {
-  const tables = await prisma.diningTable.findMany({ where: { department: { in: ["restaurant", "pub"] } } });
+  const tables = await prisma.diningTable.findMany({
+    where: { department: { in: ["restaurant", "pub"] } },
+    include: {
+      assignedWaiter: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+    },
+  });
   res.json(tables);
 });
 
@@ -80,6 +87,148 @@ r.post("/tables", requireScope("orders:write"), async (req, res) => {
   const schema = z.object({ code: z.string(), department: z.enum(["restaurant", "pub"]) });
   const created = await prisma.diningTable.create({ data: schema.parse(req.body) });
   res.status(201).json(created);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /restaurant/tables/:id/assign — Assigner ou désassigner un serveur
+// ─────────────────────────────────────────────────────────────────────────────
+ 
+r.patch("/tables/:id/assign", requireScope("orders:write"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "ID invalide" });
+ 
+    const schema = z.object({
+      waiterId: z.number().int().nullable(), // null = désassigner
+    });
+ 
+    const { waiterId } = schema.parse(req.body);
+ 
+    // Vérifier que le serveur existe si on assigne
+    if (waiterId !== null) {
+      const waiter = await prisma.user.findUnique({ where: { id: waiterId } });
+      if (!waiter) return res.status(404).json({ error: "Serveur introuvable" });
+    }
+ 
+    const updated = await prisma.diningTable.update({
+      where: { id },
+      data: { assignedWaiterId: waiterId },
+      include: {
+        assignedWaiter: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+    });
+ 
+    res.json(updated);
+  } catch (error: any) {
+    console.error("❌ Erreur PATCH /tables/:id/assign :", error);
+    if (error instanceof z.ZodError)
+      return res.status(400).json({ error: "Données invalides", details: error.errors });
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /restaurant/waiters — Liste des serveurs disponibles pour l'assignation
+// ─────────────────────────────────────────────────────────────────────────────
+ 
+r.get("/waiters", requireScope("orders:read"), async (_req, res) => {
+  try {
+    const waiters = await prisma.user.findMany({
+      where: {
+        role: { in: ["WAITER", "STAFF", "MANAGER", "ADMIN"] },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        assignedTables: {
+          select: { id: true, code: true },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+ 
+    res.json(waiters);
+  } catch (error) {
+    console.error("❌ Erreur GET /restaurant/waiters :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+r.get("/waiters/unassigned", requireScope("orders:read"), async (_req, res) => {
+  try {
+    const waiters = await prisma.user.findMany({
+      where: {
+        role: { in: ["WAITER", "STAFF", "MANAGER", "ADMIN"] },
+        assignedTables: { none: {} } // Serveurs sans table assignée
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+      orderBy: { name: "asc" },
+    });
+    
+    res.json(waiters);
+  } catch (error) {
+    console.error("❌ Erreur GET /restaurant/waiters/unassigned :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// GET /restaurant/tables/:id/waiter - Récupérer le serveur d'une table
+r.get("/tables/:id/waiter", requireScope("orders:read"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "ID invalide" });
+    
+    const table = await prisma.diningTable.findUnique({
+      where: { id },
+      include: {
+        assignedWaiter: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+    });
+    
+    if (!table) return res.status(404).json({ error: "Table introuvable" });
+    
+    res.json(table.assignedWaiter);
+  } catch (error) {
+    console.error("❌ Erreur GET /tables/:id/waiter :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// GET /restaurant/waiters/assigned-tables/:waiterId - Tables assignées à un serveur
+r.get("/waiters/assigned-tables/:waiterId", requireScope("orders:read"), async (req, res) => {
+  try {
+    const waiterId = Number(req.params.waiterId);
+    if (isNaN(waiterId)) return res.status(400).json({ error: "ID invalide" });
+    
+    const tables = await prisma.diningTable.findMany({
+      where: { assignedWaiterId: waiterId },
+      select: {
+        id: true,
+        code: true,
+        department: true,
+        orders: {
+          where: { status: "open" },
+          select: { id: true, status: true }
+        }
+      },
+    });
+    
+    res.json(tables);
+  } catch (error) {
+    console.error("❌ Erreur GET /waiters/assigned-tables/:waiterId :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
 r.patch("/tables/:id", requireScope("orders:write"), async (req, res) => {

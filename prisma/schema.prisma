@@ -21,6 +21,7 @@ model User {
   appointments   Appointment[]
   staffSlots     StaffSlot[]
   stockMovements StockMovement[]
+  assignedTables  DiningTable[]
 }
 
 model Store {
@@ -142,6 +143,8 @@ model DiningTable {
   id         Int        @id @default(autoincrement())
   code       String     @unique
   department Department
+  assignedWaiterId Int?
+  assignedWaiter  User?       @relation(fields: [assignedWaiterId], references: [id])
   orders     Order[]
 }
 
