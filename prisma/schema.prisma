@@ -184,7 +184,7 @@ model OrderLine {
 
 model Tab {
   id           Int        @id @default(autoincrement())
-  dept         Department @default(pub)
+  dept         Department @default(lounge)
   customerName String
   status       TabStatus  @default(open)
   balance      Int        @default(0)
@@ -302,7 +302,7 @@ model Service {
   id          Int        @id @default(autoincrement())
   name        String
   durationMin Int
-  dept        Department @default(spa)
+  dept        Department @default(hotel)
   salePrice   Int
   active      Boolean    @default(true)
 }
