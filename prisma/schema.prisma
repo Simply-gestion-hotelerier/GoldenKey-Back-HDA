@@ -355,8 +355,8 @@ enum MaintenanceStatus {
 enum Department {
   hotel
   restaurant
-  pub
-  spa
+lounge
+casino
 }
 
 enum Role {
