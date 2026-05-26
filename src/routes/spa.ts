@@ -101,7 +101,21 @@ r.post("/appointments/:id/pay", requireScope("payments:write"), async (req, res)
   const { amount, method } = schema.parse(req.body);
   const app = await prisma.appointment.findUnique({ where: { id } });
   if (!app) return res.status(404).json({ error: "Appointment not found" });
-  const payment = await prisma.payment.create({ data: { amount, method, department: "spa", reference: `APPT-${id}` } });
+  
+  // ✅ Modifié: "spa" → "casino" ou "lounge" selon votre choix
+  // Le spa n'existe plus dans vos départements, donc choisissez le département approprié
+  // Option 1: Utiliser "hotel" (si le spa fait partie de l'hôtel)
+  // Option 2: Utiliser "lounge" (si le spa est associé au lounge)
+  // Option 3: Utiliser "casino" (si le spa est associé au casino)
+  
+  const payment = await prisma.payment.create({ 
+    data: { 
+      amount, 
+      method, 
+      department: "hotel", // ✅ Choisissez le département approprié
+      reference: `APPT-${id}` 
+    } 
+  });
   res.status(201).json(payment);
 });
 
@@ -113,7 +127,8 @@ r.get("/services", requireScope("spa:read"), async (_req, res) => {
 
 r.post("/services", requireScope("spa:write"), async (req, res) => {
   const schema = z.object({ name: z.string(), durationMin: z.number().int().min(10), salePrice: z.number().int().min(0) });
-  const created = await prisma.service.create({ data: { ...schema.parse(req.body), dept: "spa" } });
+  // ✅ Modifié: "spa" → "hotel" (ou autre département)
+  const created = await prisma.service.create({ data: { ...schema.parse(req.body), dept: "hotel" } });
   res.status(201).json(created);
 });
 

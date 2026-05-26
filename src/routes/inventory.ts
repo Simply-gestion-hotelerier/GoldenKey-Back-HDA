@@ -37,7 +37,7 @@ r.post("/items", requireScope("inventory:write"), async (req, res) => {
     salePriceDefault: z.number().int().min(0),
     isActive: z.boolean().optional().default(true),
     isMenu: z.boolean().optional(),
-    menuDept: z.enum(["hotel", "restaurant", "pub", "spa"]).optional(),
+    menuDept: z.enum(["hotel", "restaurant", "lounge", "casino"]).optional(),
   });
   const data = schema.parse(req.body);
 
@@ -65,7 +65,7 @@ r.patch("/items/:id", requireScope("inventory:write"), async (req, res) => {
     isActive: z.boolean().optional(),
     isMenu: z.boolean().optional(),
     maxQty: z.number().int().min(1).nullable().optional(),
-    menuDept: z.enum(["hotel", "restaurant", "pub", "spa"]).nullable().optional(),
+    menuDept: z.enum(["hotel", "restaurant", "lounge", "casino"]).nullable().optional(),
   });
   const data = schema.parse(req.body);
   const updated = await prisma.item.update({ where: { id }, data });
@@ -95,7 +95,7 @@ r.get("/stores/:id", requireScope("inventory:read"), async (req, res) => {
 r.post("/stores", requireScope("inventory:write"), async (req, res) => {
   const schema = z.object({
     name: z.string(),
-    department: z.enum(["hotel", "restaurant", "pub", "spa"]),
+    department: z.enum(["hotel", "restaurant", "lounge", "casino"]),
   });
   const created = await prisma.store.create({ data: schema.parse(req.body) });
   res.status(201).json(created);
@@ -282,12 +282,10 @@ r.post("/movements", requireScope("inventory:adjust"), async (req, res) => {
     console.log("✅ Mouvement créé avec succès ID:", created.id);
 
     // ── Notifications de rupture / stock bas ──────────────────────────────
-    // Exécutées HORS transaction pour ne pas bloquer le commit en cas d'échec
     if (freshStock) {
       const { qty, minQty, item: stockItem, store: stockStore } = freshStock;
 
       if (qty === 0) {
-        // 🔴 Rupture totale
         await pushNotification({
           event: "low_stock",
           title: `🔴 Rupture de stock : ${stockItem.name}`,
@@ -303,7 +301,6 @@ r.post("/movements", requireScope("inventory:adjust"), async (req, res) => {
           },
         });
       } else if (minQty != null && qty <= minQty) {
-        // 🟠 Stock bas (au-dessus de 0 mais sous le seuil min)
         await pushNotification({
           event: "low_stock",
           title: `🟠 Stock bas : ${stockItem.name}`,
@@ -430,7 +427,7 @@ r.patch(
             isActive: z.boolean().optional(),
             isMenu: z.boolean().optional(),
             menuDept: z
-              .enum(["hotel", "restaurant", "pub", "spa"])
+              .enum(["hotel", "restaurant", "lounge", "casino"])
               .nullable()
               .optional(),
           })

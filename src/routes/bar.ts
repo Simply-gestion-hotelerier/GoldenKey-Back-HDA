@@ -27,7 +27,8 @@ r.get("/tabs", requireScope("tabs:read"), async (_req, res) => {
 });
 
 r.post("/tabs", requireScope("tabs:write"), async (req, res) => {
-  const schema = z.object({ customerName: z.string(), dept: z.enum(["pub"]).default("pub") });
+  // ✅ Modifié: "pub" → "lounge" (ou "casino" selon votre besoin)
+  const schema = z.object({ customerName: z.string(), dept: z.enum(["lounge", "casino"]).default("lounge") });
   const t = await prisma.tab.create({ data: schema.parse(req.body) });
   res.status(201).json(t);
 });
@@ -43,7 +44,8 @@ r.post("/tabs/:id/pay", requireScope("payments:write"), async (req, res) => {
       sl + l.qty * l.unitPrice, 0), 0);
   
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await tx.payment.create({ data: { amount: input.amount, method: input.method, department: "pub", tabId: id, reference: `TAB-${id}` } });
+    // ✅ Modifié: "pub" → "lounge" (ou "casino")
+    await tx.payment.create({ data: { amount: input.amount, method: input.method, department: "lounge", tabId: id, reference: `TAB-${id}` } });
     const paid = input.amount >= total;
     await tx.tab.update({ where: { id }, data: { status: paid ? "paid" : "unpaid", balance: Math.max(0, total - input.amount) } });
   });

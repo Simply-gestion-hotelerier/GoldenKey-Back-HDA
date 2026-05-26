@@ -16,11 +16,12 @@ const METHOD_LBL: Record<string, string> = {
   bank:   "Virement bancaire",
 };
 
+// ✅ MODIFICATION: Mise à jour des départements
 const DEPT_LBL: Record<string, string> = {
   hotel:      "Hôtel",
   restaurant: "Restaurant",
-  pub:        "Pub/Bar",
-  spa:        "Spa",
+  lounge:     "Lounge/Bar",
+  casino:     "Casino",
 };
 
 // ── Sessions caisse ────────────────────────────────────────────────────────────
@@ -35,8 +36,9 @@ r.get("/sessions", requireScope("cash:read"), async (req, res) => {
 });
 
 r.post("/sessions/open", requireScope("cash:open"), async (req, res) => {
+  // ✅ MODIFICATION: Mise à jour des départements
   const schema = z.object({
-    department:   z.enum(["hotel", "restaurant", "pub", "spa"]),
+    department:   z.enum(["hotel", "restaurant", "lounge", "casino"]),
     openedBy:     z.string(),
     openingFloat: z.number().int().min(0),
   });
@@ -93,8 +95,9 @@ r.get("/payments", requireScope("payments:read"), async (req, res) => {
 });
 
 r.post("/payments", requireScope("payments:write"), async (req, res) => {
+  // ✅ MODIFICATION: Mise à jour des départements
   const schema = z.object({
-    department:     z.enum(["hotel", "restaurant", "pub", "spa"]),
+    department:     z.enum(["hotel", "restaurant", "lounge", "casino"]),
     method:         z.enum(["cash", "card", "mobile", "bank"]),
     amount:         z.number().int().min(0),
     receivedAmount: z.number().int().min(0).optional(),

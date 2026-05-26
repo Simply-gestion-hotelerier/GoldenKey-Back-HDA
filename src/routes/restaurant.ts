@@ -50,7 +50,7 @@ r.post("/setup-dishes-items", async (req, res) => {
             salePriceDefault: dish.price,
             isActive: dish.isActive,
             isMenu: true,
-            menuDept: 'restaurant'
+            menuDept: 'restaurant' // ✅ Département correct
           }
         });
         results.push({ dish: dish.name, status: 'created', itemId: item.id });
@@ -73,7 +73,7 @@ r.post("/setup-dishes-items", async (req, res) => {
 
 r.get("/tables", requireScope("orders:read"), async (_req, res) => {
   const tables = await prisma.diningTable.findMany({
-    where: { department: { in: ["restaurant", "pub"] } },
+    where: { department: { in: ["restaurant", "lounge"] } }, // ✅ Modifié: "pub" → "lounge"
     include: {
       assignedWaiter: {
         select: { id: true, name: true, email: true, role: true },
@@ -84,7 +84,7 @@ r.get("/tables", requireScope("orders:read"), async (_req, res) => {
 });
 
 r.post("/tables", requireScope("orders:write"), async (req, res) => {
-  const schema = z.object({ code: z.string(), department: z.enum(["restaurant", "pub"]) });
+  const schema = z.object({ code: z.string(), department: z.enum(["restaurant", "lounge"]) }); // ✅ Modifié: "pub" → "lounge"
   const created = await prisma.diningTable.create({ data: schema.parse(req.body) });
   res.status(201).json(created);
 });
@@ -249,7 +249,7 @@ r.delete("/tables/:id", requireScope("orders:write"), async (req, res) => {
 r.get("/orders", requireScope("orders:read"), async (req, res) => {
   try {
     const schema = z.object({
-      dept: z.enum(["restaurant", "pub", "spa"]).optional(),
+      dept: z.enum(["restaurant", "lounge", "casino"]).optional(), // ✅ Modifié: "pub", "spa" → "lounge", "casino"
       status: z.enum(["open", "closed", "cancelled"]).optional(),
     });
 
@@ -311,7 +311,7 @@ r.get("/orders/:id", requireScope("orders:read"), async (req, res) => {
 });
 
 r.post("/orders", requireScope("orders:write"), async (req, res) => {
-  const schema = z.object({ dept: z.enum(["restaurant", "pub", "spa"]).default("restaurant"), tableCode: z.string().optional(), tabId: z.number().int().optional() });
+  const schema = z.object({ dept: z.enum(["restaurant", "lounge", "casino"]).default("restaurant"), tableCode: z.string().optional(), tabId: z.number().int().optional() }); // ✅ Modifié
   const input = schema.parse(req.body);
   const table = input.tableCode ? await prisma.diningTable.findUnique({ where: { code: input.tableCode } }) : null;
   const created = await prisma.order.create({ data: { dept: input.dept, tableId: table?.id, status: "open", tabId: input.tabId } });
@@ -384,7 +384,7 @@ r.post("/orders/:id/lines", requireScope("orders:write"), async (req, res) => {
           salePriceDefault: dish.price,
           isActive: dish.isActive,
           isMenu: true,
-          menuDept: "restaurant"
+          menuDept: "restaurant" // ✅ Département correct
         }
       });
     }

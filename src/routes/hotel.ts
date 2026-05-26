@@ -740,7 +740,7 @@ r.post("/folios/:id/charge", requireScope("folios:write"), async (req, res) => {
       description: z.string().min(1),
       qty:         z.number().int().min(1),
       unitPrice:   z.number().int().min(0),
-      department:  z.enum(["hotel", "restaurant", "pub", "spa"]),
+      department:  z.enum(["hotel", "restaurant", "lounge", "casino"]), // ✅ CORRECTION ICI
     });
     const input  = schema.parse(req.body);
     const charge = await prisma.folioCharge.create({ data: { ...input, folioId: id } });

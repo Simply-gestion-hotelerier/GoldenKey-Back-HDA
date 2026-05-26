@@ -33,7 +33,8 @@ r.get("/daily", requireScope("reports:read"), async (req, res) => {
   const { start, end } = dayRange(String(date));
   const lines: { label: string; qty: number; unit: number; total: number }[] = [];
 
-  if (dept === "restaurant" || dept === "pub") {
+  // ✅ MODIFICATION: "pub" → "lounge"
+  if (dept === "restaurant" || dept === "lounge") {
     const orders = await prisma.order.findMany({
       where: { dept, openedAt: { gte: start, lt: end } },
       include: {
@@ -114,7 +115,8 @@ r.get("/daily", requireScope("reports:read"), async (req, res) => {
     return res.json({ date: String(date), dept, lines, total, ordersDetail });
   }
 
-  if (dept === "spa") {
+  // ✅ MODIFICATION: "spa" → "casino" (ou "lounge" selon votre choix)
+  if (dept === "casino") {
     const apps = await prisma.appointment.findMany({
       where: { status: "completed", start: { gte: start, lt: end } },
       select: { serviceName: true, price: true },
@@ -188,10 +190,11 @@ r.get("/daily", requireScope("reports:read"), async (req, res) => {
 // ── GET /reports/sales ────────────────────────────────────────────────────────
 
 r.get("/sales", requireScope("reports:read"), async (req, res) => {
+  // ✅ MODIFICATION: Mise à jour des départements
   const schema = z.object({
     from: z.string(),
     to: z.string(),
-    dept: z.enum(["all", "restaurant", "pub", "hotel", "spa"]).default("all"),
+    dept: z.enum(["all", "restaurant", "lounge", "hotel", "casino"]).default("all"),
   });
 
   let input: z.infer<typeof schema>;
@@ -201,9 +204,10 @@ r.get("/sales", requireScope("reports:read"), async (req, res) => {
   const { start, end } = periodRange(input.from, input.to);
   const result: Record<string, any> = { from: input.from, to: input.to, dept: input.dept };
 
-  // ── Restaurant / Pub ──────────────────────────────────────────────────────
-  if (input.dept === "all" || input.dept === "restaurant" || input.dept === "pub") {
-    const depts = input.dept === "all" ? ["restaurant", "pub"] : [input.dept];
+  // ── Restaurant / Lounge ──────────────────────────────────────────────────────
+  // ✅ MODIFICATION: "pub" → "lounge"
+  if (input.dept === "all" || input.dept === "restaurant" || input.dept === "lounge") {
+    const depts = input.dept === "all" ? ["restaurant", "lounge"] : [input.dept];
 
     const orders = await prisma.order.findMany({
       where: { dept: { in: depts as any }, openedAt: { gte: start, lte: end } },
@@ -349,8 +353,9 @@ r.get("/sales", requireScope("reports:read"), async (req, res) => {
     };
   }
 
-  // ── Spa ───────────────────────────────────────────────────────────────────
-  if (input.dept === "all" || input.dept === "spa") {
+  // ── Casino (ex-Spa) ───────────────────────────────────────────────────
+  // ✅ MODIFICATION: "spa" → "casino"
+  if (input.dept === "all" || input.dept === "casino") {
     const appointments = await prisma.appointment.findMany({
       where: { start: { gte: start, lte: end } },
       orderBy: { start: "asc" },
@@ -368,7 +373,7 @@ r.get("/sales", requireScope("reports:read"), async (req, res) => {
       .map(([service, v]) => ({ service, ...v }))
       .sort((a, b) => b.revenue - a.revenue);
 
-    result.spa = {
+    result.casino = {
       appointments: appointments.map((a) => ({
         id: a.id,
         clientName: a.clientName,
@@ -502,10 +507,11 @@ r.get("/stock", requireScope("reports:read"), async (req, res) => {
 // ── GET /reports/orders ───────────────────────────────────────────────────────
 
 r.get("/orders", requireScope("reports:read"), async (req, res) => {
+  // ✅ MODIFICATION: Mise à jour des départements
   const schema = z.object({
     from: z.string(),
     to: z.string(),
-    dept: z.enum(["restaurant", "pub", "spa"]).optional(),
+    dept: z.enum(["restaurant", "lounge", "casino"]).optional(),
     status: z.enum(["open", "closed", "cancelled"]).optional(),
   });
 
