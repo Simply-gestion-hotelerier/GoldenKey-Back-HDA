@@ -38,7 +38,7 @@ const ingredientSchema = z.object({
 const dishSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  category: z.enum(["appetizer", "main_course", "dessert", "beverage", "side_dish","dejeuner", "snack"]),
+  category: z.enum(["appetizer", "main_course", "dessert", "beverage", "side_dish","lunch", "snack"]),
   preparationTime: z.number().min(1),
   price: z.number().min(0),
   difficulty: z.enum(["easy", "medium", "hard"]),
@@ -51,7 +51,8 @@ const dishSchema = z.object({
  * -------------------------------------------------------- */
 router.get("/", requireScope("inventory:read"), async (_req, res) => {
   try {
-    const dishes = await prisma.dish.findMany({
+    const dishes = await prisma.dish.findMany({      
+      where: { menuDept: "restaurant" },
       orderBy: { createdAt: "desc" },
     });
     res.json({ data: dishes });
@@ -133,6 +134,7 @@ router.post("/", requireScope("inventory:write"), async (req, res) => {
         difficulty: data.difficulty,
         isActive: data.isActive,
         ingredients: data.ingredients,
+        menuDept: "restaurant"
       },
     });
 
@@ -144,7 +146,7 @@ router.post("/", requireScope("inventory:write"), async (req, res) => {
   } catch (error: any) {
     if (error instanceof z.ZodError)
       return res.status(400).json({ error: "Validation échouée", details: error.errors });
-    res.status(500).json({ error: "Erreur serveur lors de la création du plat." });
+    res.status(500).json({ error: "Erreur serveur lors de la création du plat. Le nom de l'article existe déjà." });
   }
 });
 
@@ -167,6 +169,8 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
     // ✅ GESTION INTELLIGENTE - Seulement si les ingrédients changent
     if (data.ingredients) {
       console.log('🔄 Modification des ingrédients détectée');
+
+      const storeId = await getRestaurantStoreId();
       
       // 1. Calculer les DIFFÉRENCES entre anciens et nouveaux ingrédients
       const ingredientChanges = calculateIngredientChanges(oldIngredients, data.ingredients);
@@ -176,14 +180,14 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
         console.log(`📥 Restauration: ${change.itemName} +${change.quantity}`);
         
         await prisma.stock.updateMany({
-          where: { itemId: change.itemId, storeId: 1 },
+          where: { itemId: change.itemId, storeId },
           data: { qty: { increment: change.quantity } }
         });
         
         await prisma.stockMovement.create({
           data: {
             itemId: change.itemId,
-            storeId: 1,
+            storeId,
             qty: change.quantity,
             type: "IN",
             reason: `Ingrédient retiré du plat: ${oldDish.name}`
@@ -196,14 +200,14 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
         console.log(`📤 Déduction: ${change.itemName} -${change.quantity}`);
         
         await prisma.stock.updateMany({
-          where: { itemId: change.itemId, storeId: 1 },
+          where: { itemId: change.itemId, storeId },
           data: { qty: { decrement: change.quantity } }
         });
 
         await prisma.stockMovement.create({
           data: {
             itemId: change.itemId,
-            storeId: 1,
+            storeId,
             qty: change.quantity,
             type: "OUT",
             reason: `Utilisation pour plat: ${data.name || oldDish.name}`
@@ -217,7 +221,8 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
       where: { id },
       data: {
         ...data,
-        ingredients: data.ingredients ?? undefined,
+        ingredients: data.ingredients ?? undefined,        
+        menuDept: "restaurant" 
       },
     });
 
@@ -229,7 +234,7 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
       return res.status(404).json({ error: "Plat introuvable" });
     if (error instanceof z.ZodError)
       return res.status(400).json({ error: "Validation échouée", details: error.errors });
-    res.status(500).json({ error: "Erreur serveur lors de la mise à jour du plat." });
+    res.status(500).json({ error: "Erreur serveur lors de la mise à jour du plat. Le nom du plat existe déjà." });
   }
 });
 
@@ -304,6 +309,8 @@ router.delete("/:id", requireScope("inventory:write"), async (req, res) => {
       return res.status(404).json({ error: "Plat introuvable" });
     }
 
+    const storeId = await getRestaurantStoreId();
+
     console.log('📋 Plat à supprimer:', dish.name);
     console.log('🧾 Ingrédients:', dish.ingredients);
 
@@ -329,7 +336,7 @@ router.delete("/:id", requireScope("inventory:write"), async (req, res) => {
         const stockExists = await prisma.stock.findFirst({
           where: { 
             itemId: ingredient.itemId, 
-            storeId: 1 
+            storeId 
           }
         });
 
@@ -337,7 +344,7 @@ router.delete("/:id", requireScope("inventory:write"), async (req, res) => {
           console.log(`📦 Création stock pour ${ingredient.itemName}`);
           await prisma.stock.create({
             data: {
-              storeId: 1,
+              storeId,
               itemId: ingredient.itemId,
               qty: ingredient.quantity, // On remet la quantité
               minQty: 0,
@@ -347,13 +354,13 @@ router.delete("/:id", requireScope("inventory:write"), async (req, res) => {
         } else {
           // Mettre à jour le stock existant
           const stockBefore = await prisma.stock.findFirst({
-            where: { itemId: ingredient.itemId, storeId: 1 }
+            where: { itemId: ingredient.itemId, storeId }
           });
 
           const updateResult = await prisma.stock.updateMany({
             where: { 
               itemId: ingredient.itemId, 
-              storeId: 1 
+              storeId 
             },
             data: { 
               qty: { increment: ingredient.quantity } 
@@ -361,7 +368,7 @@ router.delete("/:id", requireScope("inventory:write"), async (req, res) => {
           });
 
           const stockAfter = await prisma.stock.findFirst({
-            where: { itemId: ingredient.itemId, storeId: 1 }
+            where: { itemId: ingredient.itemId, storeId }
           });
 
           console.log(`📊 Stock ${ingredient.itemName}: ${stockBefore?.qty} → ${stockAfter?.qty}`);
@@ -371,7 +378,7 @@ router.delete("/:id", requireScope("inventory:write"), async (req, res) => {
         await prisma.stockMovement.create({
           data: {
             itemId: ingredient.itemId,
-            storeId: 1,
+            storeId,
             qty: ingredient.quantity,
             type: "IN",
             reason: `Suppression plat: ${dish.name}`

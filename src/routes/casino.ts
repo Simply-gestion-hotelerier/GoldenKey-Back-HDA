@@ -8,23 +8,23 @@ import { fmt } from "../utils/fmt";
 const r = Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper — Hotel store ID (department: "hotel")
+// Helper — Casino store ID (department: "casino")
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function getHotelStoreId() {
+async function getCasinoStoreId() {
   try {
     const store = await prisma.store.findFirst({
-      where: { department: "hotel" },
+      where: { department: "casino" },
     });
     if (!store) {
-      console.warn("⚠️ Store HOTEL non trouvé en base ! Utilisation de l'ID 10 par défaut");
+      console.warn("⚠️ Store CASINO non trouvé en base ! Utilisation de l'ID 9 par défaut");
       return 8;
     }
     console.log(`🍺 Store BAR trouvé: ID ${store.id} - ${store.name}`);
     return store.id;
   } catch (error) {
     console.error("❌ Erreur récupération store BAR:", error);
-    return 10;
+    return 9;
   }
 }
 
@@ -32,19 +32,19 @@ async function getHotelStoreId() {
 // Setup items for bar dishes
 // ─────────────────────────────────────────────────────────────────────────────
 
-r.post("/setup-hotel-items", async (_req, res) => {
+r.post("/setup-casino-items", async (_req, res) => {
   try {
     const dishes = await prisma.dish.findMany({
-      where: { menuDept: "hotel" } as any,
+      where: { menuDept: "casino" } as any,
     });
     const results = [];
 
     for (const dish of dishes) {
-      let item = await prisma.item.findFirst({ where: { sku: `HOTEL-${dish.id}` } });
+      let item = await prisma.item.findFirst({ where: { sku: `CASINO-${dish.id}` } });
       if (!item) {
         item = await prisma.item.create({
           data: {
-            sku: `HOTEL-${dish.id}`,
+            sku: `CASINO-${dish.id}`,
             name: dish.name,
             unit: "piece",
             vatRate: 10,
@@ -52,7 +52,7 @@ r.post("/setup-hotel-items", async (_req, res) => {
             salePriceDefault: dish.price,
             isActive: dish.isActive,
             isMenu: true,
-            menuDept: "hotel",
+            menuDept: "casino",
           },
         });
         results.push({ dish: dish.name, status: "created", itemId: item.id });
@@ -61,20 +61,20 @@ r.post("/setup-hotel-items", async (_req, res) => {
       }
     }
 
-    res.json({ message: "Configuration hotel terminée", results });
+    res.json({ message: "Configuration casino terminée", results });
   } catch (error) {
-    console.error("❌ Erreur setup hotel items:", error);
+    console.error("❌ Erreur setup casino items:", error);
     res.status(500).json({ error });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tables (department: "hotel")
+// Tables (department: "casino")
 // ─────────────────────────────────────────────────────────────────────────────
 
 r.get("/tables", requireScope("orders:read"), async (_req, res) => {
   const tables = await prisma.diningTable.findMany({
-    where: { department: "hotel" },
+    where: { department: "casino" },
     include: {
       assignedWaiter: {
         select: { id: true, name: true, email: true, role: true },
@@ -87,7 +87,7 @@ r.get("/tables", requireScope("orders:read"), async (_req, res) => {
 r.post("/tables", requireScope("orders:write"), async (req, res) => {
   const schema = z.object({
     code: z.string(),
-    department: z.literal("hotel").default("hotel"),
+    department: z.literal("casino").default("casino"),
   });
   const created = await prisma.diningTable.create({ data: schema.parse(req.body) });
   res.status(201).json(created);
@@ -154,7 +154,7 @@ r.delete("/tables/:id", requireScope("orders:write"), async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Orders (dept: "hotel")
+// Orders (dept: "casino")
 // ─────────────────────────────────────────────────────────────────────────────
 
 r.get("/orders", requireScope("orders:read"), async (req, res) => {
@@ -166,7 +166,7 @@ r.get("/orders", requireScope("orders:read"), async (req, res) => {
 
     const orders = await prisma.order.findMany({
       where: {
-        dept: "hotel",
+        dept: "casino",
         ...(status ? { status } : {}),
       },
       include: {
@@ -214,7 +214,7 @@ r.post("/orders", requireScope("orders:write"), async (req, res) => {
 
   const created = await prisma.order.create({
     data: {
-      dept: "hotel",
+      dept: "casino",
       tableId: table?.id,
       status: "open",
       tabId: input.tabId,
@@ -223,10 +223,10 @@ r.post("/orders", requireScope("orders:write"), async (req, res) => {
 
   await pushNotification({
     event: "order_created",
-    title: `🏨 Nouvelle commande hôtel — ${input.tableCode ?? "Emporter"}`,
-    body: `Commande #${created.id} ouverte à l'hôtel`,
+    title: `🎰 Nouvelle commande casino — ${input.tableCode ?? "Emporter"}`,
+    body: `Commande #${created.id} ouverte au casino`,
     targetRoles: ["admin", "staff", "waiter"],
-    meta: { orderId: created.id, dept: "hotel", tableCode: input.tableCode },
+    meta: { orderId: created.id, dept: "casino", tableCode: input.tableCode },
   }).catch(() => {});
 
   res.status(201).json(created);
@@ -252,8 +252,8 @@ r.post("/orders/:id/lines", requireScope("orders:write"), async (req, res) => {
     let item = await prisma.item.findFirst({
       where: {
         OR: [
-          { sku: `HOTEL-${dish.id}` },
-          { name: dish.name, isMenu: true, menuDept: "hotel" },
+          { sku: `CASINO-${dish.id}` },
+          { name: dish.name, isMenu: true, menuDept: "casino" },
         ],
       },
     });
@@ -261,7 +261,7 @@ r.post("/orders/:id/lines", requireScope("orders:write"), async (req, res) => {
     if (!item) {
       item = await prisma.item.create({
         data: {
-          sku: `HOTEL-${dish.id}`,
+          sku: `CASINO-${dish.id}`,
           name: dish.name,
           category: dish.category,
           unit: "piece",
@@ -270,7 +270,7 @@ r.post("/orders/:id/lines", requireScope("orders:write"), async (req, res) => {
           salePriceDefault: dish.price,
           isActive: dish.isActive,
           isMenu: true,
-          menuDept: "hotel",
+          menuDept: "casino",
         },
       });
     }
@@ -305,7 +305,7 @@ r.post("/orders/:id/lines", requireScope("orders:write"), async (req, res) => {
 
     res.status(201).json({ message: "Article ajouté", data: line });
   } catch (error: any) {
-    console.error("💥 ERREUR hotel/orders/:id/lines:", error);
+    console.error("💥 ERREUR casino/orders/:id/lines:", error);
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
@@ -339,8 +339,8 @@ r.patch("/orders/:id/lines/:lineId/status", requireScope("orders:status"), async
   if (status === "ready") {
     await pushNotification({
       event: "order_line_status",
-      title: `🔔 Article prêt à servir (Hôtel)`,
-      body: `Commande #${id} — un article est prêt (hôtel)`,
+      title: `🔔 Article prêt à servir (Casino)`,
+      body: `Commande #${id} — un article est prêt (casino)`,
       targetRoles: ["waiter"],
       meta: { orderId: id, lineId, status },
     }).catch(() => {});
@@ -360,7 +360,7 @@ r.patch("/orders/:id/lines/:lineId/status", requireScope("orders:status"), async
         return res.json(updated);
       }
 
-      const storeId = await getHotelStoreId();
+      const storeId = await getCasinoStoreId();
       const ingredients = dish.ingredients as Array<{
         itemId: number;
         itemName: string;
@@ -391,12 +391,12 @@ r.patch("/orders/:id/lines/:lineId/status", requireScope("orders:status"), async
             storeId,
             qty: ingredient.quantity,
             type: "OUT",
-            reason: `Livraison commande hôtel #${id} — ${dish.name}${newQty < 0 ? " (STOCK INSUFFISANT)" : ""}`,
+            reason: `Livraison commande casino #${id} — ${dish.name}${newQty < 0 ? " (STOCK INSUFFISANT)" : ""}`,
           },
         });
       }
     } catch (err) {
-      console.error("❌ Erreur déduction stock hôtel:", err);
+      console.error("❌ Erreur déduction stock casino:", err);
     }
   }
 
@@ -457,7 +457,7 @@ r.post("/orders/:id/close", requireScope("orders:write"), async (req, res) => {
 
   await pushNotification({
     event: "order_closed",
-    title: `✅ Commande hôtel clôturée`,
+    title: `✅ Commande casino clôturée`,
     body: `Commande #${id} — Total : ${fmt(total)} Ar`,
     targetRoles: ["admin", "cashier"],
     meta: { orderId: id, total },

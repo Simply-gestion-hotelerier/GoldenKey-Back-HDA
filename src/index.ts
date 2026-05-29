@@ -4,9 +4,14 @@ import morgan from "morgan";
 import { ENV } from "./env";
 import { prisma } from "./db";
 import inventory from "./routes/inventory";
+import hotelroom from "./routes/hotelroom";
 import hotel from "./routes/hotel";
-import restaurant from "./routes/restaurant";
+import dish_hotel from "./routes/dish_hotel";
 import bar from "./routes/bar";
+import dish_bar from "./routes/dish_bar";
+import restaurant from "./routes/restaurant";
+import casino from "./routes/casino";
+import dish_casino from "./routes/dish_casino";
 import spa from "./routes/spa";
 import cash from "./routes/cash";
 import invoices from "./routes/invoices";
@@ -67,25 +72,36 @@ async function bootstrap() {
   // ── Routes protégées ──────────────────────────────────────────────────────
   app.use("/users", usersRouter);
   app.use("/inventory", inventory);
-  app.use("/hotel", hotel);
-  app.use("/restaurant", restaurant);
+  app.use("/hotelrooms", hotelroom);
+  app.use("/hotel", hotel)           // hotel.ts
+  app.use("/hotel/dishes", dish_hotel)  // dishes_hotel.ts
   app.use("/bar", bar);
+  app.use("/bar/dishes", dish_bar);  
+  app.use("/restaurant", restaurant);  
+  app.use("/dishes", dishes);
+  app.use("/casino", casino)       // casino.ts
+  app.use("/casino/dishes", dish_casino) // dish_casino.ts
   app.use("/spa", spa);
   app.use("/cash", cash);
   app.use("/invoices", invoices);
   app.use("/crm", crm);
   app.use("/reports", reports);
   app.use("/notifications", notifications);
-  app.use("/dishes", dishes);
   app.use("/folios", folios);
 
   // Alias /api/*
   app.use("/api/users", usersRouter);
   app.use("/api/dishes", dishes);
   app.use("/api/inventory", inventory);
-  app.use("/api/hotel", hotel);
-  app.use("/api/restaurant", restaurant);
+  app.use("/api/hotelrooms", hotelroom);
+  app.use("/api/hotel", hotel)           // hotel.ts
+  app.use("/api/hotel/dishes", dish_hotel)  // dishes_hotel.ts
+  // app.use("/api/bar", bar);
   app.use("/api/bar", bar);
+  app.use("/api/bar/dishes", dish_bar);  
+  app.use("/api/restaurant", restaurant);
+  app.use("/api/casino", casino)       // casino.ts
+  app.use("/api/casino/dishes", dish_casino) // dish_casino.ts
   app.use("/api/spa", spa);
   app.use("/api/cash", cash);
   app.use("/api/invoices", invoices);
