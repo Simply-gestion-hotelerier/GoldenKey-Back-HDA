@@ -144,9 +144,12 @@ router.post("/", requireScope("inventory:write"), async (req, res) => {
     });
 
   } catch (error: any) {
+    console.error("❌ Erreur POST /restaurant/dishes:", error);
     if (error instanceof z.ZodError)
       return res.status(400).json({ error: "Validation échouée", details: error.errors });
-    res.status(500).json({ error: "Erreur serveur lors de la création du plat. Le nom de l'article existe déjà." });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return res.status(400).json({ error: "Un article restaurant avec ce nom existe déjà." });
+    res.status(500).json({ error: "Erreur serveur lors de la création de l'article restaurant. Le nom est peut-être déjà utilisé." });
   }
 });
 
@@ -234,6 +237,8 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
       return res.status(404).json({ error: "Plat introuvable" });
     if (error instanceof z.ZodError)
       return res.status(400).json({ error: "Validation échouée", details: error.errors });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return res.status(400).json({ error: "Un article restaurant avec ce nom existe déjà." });
     res.status(500).json({ error: "Erreur serveur lors de la mise à jour du plat. Le nom du plat existe déjà." });
   }
 });

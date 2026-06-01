@@ -156,9 +156,12 @@ router.post("/", requireScope("inventory:write"), async (req, res) => {
 
     res.status(201).json({ message: "Article casino créé avec succès", data: created });
   } catch (error: any) {
+    console.error("❌ Erreur POST /casino/dishes:", error);
     if (error instanceof z.ZodError)
       return res.status(400).json({ error: "Validation échouée", details: error.errors });
-    res.status(500).json({ error: "Erreur serveur lors de la création de l'article casino." });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return res.status(400).json({ error: "Un article casino avec ce nom existe déjà." });
+    res.status(500).json({ error: "Erreur serveur lors de la création de l'article casino. Le nom est peut-être déjà utilisé." });
   }
 });
 
@@ -230,6 +233,8 @@ router.patch("/:id", requireScope("inventory:write"), async (req, res) => {
       return res.status(404).json({ error: "Article casino introuvable" });
     if (error instanceof z.ZodError)
       return res.status(400).json({ error: "Validation échouée", details: error.errors });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return res.status(400).json({ error: "Un article casino avec ce nom existe déjà." });
     res.status(500).json({ error: "Erreur serveur lors de la mise à jour de l'article casino." });
   }
 });
