@@ -25,7 +25,7 @@ function periodRange(from: string, to: string) {
 }
 
 // ── GET /reports/daily ────────────────────────────────────────────────────────
-
+// hotel_reservations + hotel_services = departement "hotel"
 r.get("/daily", requireScope("reports:read"), async (req, res) => {
   const { dept, date } = req.query as any;
   if (!dept || !date) return res.status(400).json({ error: "dept and date are required" });
@@ -33,10 +33,13 @@ r.get("/daily", requireScope("reports:read"), async (req, res) => {
   const { start, end } = dayRange(String(date));
   const lines: { label: string; qty: number; unit: number; total: number }[] = [];
 
-  // ✅ MODIFICATION: "pub" → "lounge"
-  if (dept === "restaurant" || dept === "lounge") {
+  if (dept === "restaurant" || dept === "lounge" || dept === "hotel_services" || dept === "caisino") {
+    // Use a new variable for the mapped department
+    let mappedDept = dept;
+    mappedDept = mappedDept === "hotel_services" ? "hotel" : mappedDept;
+    
     const orders = await prisma.order.findMany({
-      where: { dept, openedAt: { gte: start, lt: end } },
+      where: { dept: mappedDept, openedAt: { gte: start, lt: end } },
       include: {
         lines: true,
         payments: {
@@ -112,18 +115,10 @@ r.get("/daily", requireScope("reports:read"), async (req, res) => {
     });
 
     const total = ordersDetail.reduce((s, o) => s + o.orderTotal, 0);
-    return res.json({ date: String(date), dept, lines, total, ordersDetail });
+    return res.json({ date: String(date), dept: mappedDept, lines, total, ordersDetail });
   }
 
-  // ✅ MODIFICATION: "spa" → "casino" (ou "lounge" selon votre choix)
-  if (dept === "casino") {
-    const apps = await prisma.appointment.findMany({
-      where: { status: "completed", start: { gte: start, lt: end } },
-      select: { serviceName: true, price: true },
-    });
-    for (const a of apps)
-      lines.push({ label: a.serviceName, qty: 1, unit: a.price, total: a.price });
-  } else if (dept === "hotel") {
+  if (dept === "hotel_reservations") {
     // Réservations actives ce jour
     const reservations = await prisma.reservation.findMany({
       where: {
