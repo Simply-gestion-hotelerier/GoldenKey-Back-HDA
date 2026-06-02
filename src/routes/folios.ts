@@ -83,9 +83,20 @@ r.get("/:id", requireScope("reports:read"), async (req, res) => {
       (new Date(res_.checkOut).getTime() - new Date(res_.checkIn).getTime()) / 86_400_000
     )
   );
+
+  // chargesTotal inclut déjà la charge hébergement créée lors de la réservation
+  // (qty: nights × unitPrice: rate). On ne recalcule PAS roomTotal séparément
+  // pour éviter le double comptage.
   const chargesTotal  = folio.charges.reduce((s, c) => s + c.unitPrice * c.qty, 0);
-  const roomTotal     = res_.rate * nights;
-  const totalCharges  = chargesTotal + roomTotal;
+  const roomTotal     = res_.rate * nights;   // gardé pour affichage seulement
+  // Si aucune FolioCharge hébergement n'existe (ancienne réservation), on l'ajoute
+  const hasRoomCharge = folio.charges.some(
+    (c) =>
+      c.department === "hotel" &&
+      (c.description.toLowerCase().includes("hébergement") ||
+       c.description.toLowerCase().includes("chambre"))
+  );
+  const totalCharges  = hasRoomCharge ? chargesTotal : chargesTotal + roomTotal;
   const totalPayments = folio.payments.reduce((s, p) => s + p.amount, 0);
 
   // ── Fetch linked orders ───────────────────────────────
@@ -168,9 +179,10 @@ r.get("/:id", requireScope("reports:read"), async (req, res) => {
     checkOut:      new Date(res_.checkOut).toLocaleDateString("fr-FR"),
     nights,
     ratePerNight:  res_.rate,
+    rateMode:      (res_ as any).rateMode ?? "per_night",
     charges:       folio.charges,
     payments:      folio.payments,
-    orders:        enrichedOrders,          // ← NEW
+    orders:        enrichedOrders,
     totalCharges,
     totalPayments,
     balance:       totalCharges - totalPayments,

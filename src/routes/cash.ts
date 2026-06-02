@@ -124,13 +124,13 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
     if (input.receivedAmount === undefined) input.receivedAmount = cardTotal;
   }
 
-  if (
-    input.method !== "card" &&
-    input.receivedAmount !== undefined &&
-    input.receivedAmount < input.amount
-  ) {
-    return res.status(400).json({ error: "receivedAmount cannot be less than amount" });
-  }
+  // if (
+  //   input.method !== "card" &&
+  //   input.receivedAmount !== undefined &&
+  //   input.receivedAmount < input.amount
+  // ) {
+  //   return res.status(400).json({ error: "receivedAmount cannot be less than amount" });
+  // }
 
   // ── Reference ────────────────────────────────────────────────────────────
   let referenceNote = input.reference || "";
