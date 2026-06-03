@@ -95,7 +95,6 @@ r.get("/payments", requireScope("payments:read"), async (req, res) => {
 });
 
 r.post("/payments", requireScope("payments:write"), async (req, res) => {
-  // ✅ MODIFICATION: Mise à jour des départements
   const schema = z.object({
     department:     z.enum(["hotel", "restaurant", "lounge", "casino"]),
     method:         z.enum(["cash", "card", "mobile", "bank"]),
@@ -107,43 +106,35 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
     cashSessionId:  z.number().int().optional(),
     reference:      z.string().optional(),
   });
-
+ 
   const input = schema.parse(req.body);
-
+ 
   const targets = [input.orderId, input.folioId, input.tabId].filter(Boolean);
   if (targets.length !== 1)
     return res.status(400).json({ error: "Provide exactly one of orderId, folioId or tabId" });
-
+ 
   // ── Frais carte ───────────────────────────────────────────────────────────
   let cardFee   = 0;
   let cardTotal = 0;
-
+ 
   if (input.method === "card") {
     cardFee   = Math.round(input.amount * 0.05);
     cardTotal = input.amount + cardFee;
     if (input.receivedAmount === undefined) input.receivedAmount = cardTotal;
   }
-
-  // if (
-  //   input.method !== "card" &&
-  //   input.receivedAmount !== undefined &&
-  //   input.receivedAmount < input.amount
-  // ) {
-  //   return res.status(400).json({ error: "receivedAmount cannot be less than amount" });
-  // }
-
+ 
   // ── Reference ────────────────────────────────────────────────────────────
   let referenceNote = input.reference || "";
   if (input.method === "card") {
     const feeNote = `Frais banque 5% = ${cardFee} Ar (informatif, gardé par banque) | Total carte = ${cardTotal} Ar`;
     referenceNote = referenceNote ? `${referenceNote} | ${feeNote}` : feeNote;
   }
-
+ 
   // ── Opérateur JWT ─────────────────────────────────────────────────────────
   const jwtUser = (req as any).user;
   const operatorName: string | null = jwtUser?.name ?? jwtUser?.email ?? null;
   const operatorId: number | null   = jwtUser?.id ?? null;
-
+ 
   const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const payment = await tx.payment.create({
       data: {
@@ -160,39 +151,61 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
         operatorId,
       },
     });
-
-    const change =
-      input.method === "cash" && input.receivedAmount
-        ? Math.max(0, input.receivedAmount - input.amount)
-        : 0;
-
+ 
+    // ── Helper change ─────────────────────────────────────────────────────
+    // Règle unique : change = receivedAmount - currentBalance si receivedAmount > currentBalance
+    // - receivedAmount = ce que le client a physiquement tendu
+    // - currentBalance = solde dû AVANT ce paiement (lu depuis la DB)
+    const computeChange = (receivedAmount: number | undefined, currentBalance: number): number => {
+      if (!receivedAmount) return 0;
+      return receivedAmount > currentBalance ? receivedAmount - currentBalance : 0;
+    };
+ 
     // ── Commande ─────────────────────────────────────────────────────────
     if (input.orderId) {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: input.orderId },
         include: { lines: true, payments: true },
       });
-      const subtotal  = order.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
-      const discount  = (order as any).discountAmount ?? 0;
-      const total     = Math.max(0, subtotal - discount);
-      const paid      = order.payments.reduce((s, p) => s + p.amount, 0);
-      const remaining = Math.max(0, total - paid);
+      const subtotal   = order.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+      const discount   = (order as any).discountAmount ?? 0;
+      const total      = Math.max(0, subtotal - discount);
+      // paidBefore exclut le paiement qu'on vient de créer (même transaction)
+      const paidBefore = order.payments
+        .filter(p => p.id !== payment.id)
+        .reduce((s, p) => s + p.amount, 0);
+      const remaining  = Math.max(0, total - paidBefore); // solde DU AVANT ce paiement
+ 
+      // ✅ change = reçu - solde_avant  (pas reçu - amount)
+      const change = computeChange(input.receivedAmount, remaining);
+ 
       return {
         payment,
         cardFee:   input.method === "card" ? cardFee : 0,
         cardTotal: input.method === "card" ? cardTotal : 0,
-        context: { type: "order", total, paid, remaining, change },
+        context: {
+          type:      "order",
+          total,
+          paid:      paidBefore + input.amount,
+          remaining: Math.max(0, remaining - input.amount),
+          change,
+        },
       };
     }
-
+ 
     // ── Folio ─────────────────────────────────────────────────────────────
     if (input.folioId) {
-      const folio      = await tx.folio.findUniqueOrThrow({ where: { id: input.folioId } });
-      const newBalance = Math.max(0, folio.balance - input.amount);
-      const updated    = await tx.folio.update({
+      const folio         = await tx.folio.findUniqueOrThrow({ where: { id: input.folioId } });
+      const balanceBefore = folio.balance; // solde DU AVANT ce paiement
+      const newBalance    = Math.max(0, balanceBefore - input.amount);
+      const updated       = await tx.folio.update({
         where: { id: folio.id },
         data:  { balance: newBalance, closedAt: newBalance === 0 ? new Date() : folio.closedAt },
       });
+ 
+      // ✅ change = reçu - solde_avant
+      const change = computeChange(input.receivedAmount, balanceBefore);
+ 
       return {
         payment,
         cardFee:   input.method === "card" ? cardFee : 0,
@@ -200,35 +213,42 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
         context: { type: "folio", balance: updated.balance, closed: !!updated.closedAt, change },
       };
     }
-
+ 
     // ── Tab ───────────────────────────────────────────────────────────────
     if (input.tabId) {
       const tab = await tx.tab.findUniqueOrThrow({
         where:   { id: input.tabId },
         include: { orders: { include: { lines: true } }, payments: true },
       });
-      const total   = tab.orders.reduce((so, o) => so + o.lines.reduce((sl, l) => sl + l.qty * l.unitPrice, 0), 0);
-      const paid    = tab.payments.reduce((s, p) => s + p.amount, 0);
-      const balance = Math.max(0, total - paid);
-      const status  = balance === 0 ? "paid" : ("unpaid" as const);
-      await tx.tab.update({ where: { id: tab.id }, data: { status, balance } });
+      const total         = tab.orders.reduce((so, o) => so + o.lines.reduce((sl, l) => sl + l.qty * l.unitPrice, 0), 0);
+      const paidBefore    = tab.payments
+        .filter(p => p.id !== payment.id)
+        .reduce((s, p) => s + p.amount, 0);
+      const balanceBefore = Math.max(0, total - paidBefore); // solde DU AVANT ce paiement
+      const newBalance    = Math.max(0, balanceBefore - input.amount);
+      const status        = newBalance === 0 ? "paid" : ("unpaid" as const);
+ 
+      // ✅ change = reçu - solde_avant
+      const change = computeChange(input.receivedAmount, balanceBefore);
+ 
+      await tx.tab.update({ where: { id: tab.id }, data: { status, balance: newBalance } });
       return {
         payment,
         cardFee:   input.method === "card" ? cardFee : 0,
         cardTotal: input.method === "card" ? cardTotal : 0,
-        context: { type: "tab", total, paid, balance, status, change },
+        context: { type: "tab", total, paid: paidBefore + input.amount, balance: newBalance, status, change },
       };
     }
-
+ 
     return {
       payment,
       cardFee:   input.method === "card" ? cardFee : 0,
       cardTotal: input.method === "card" ? cardTotal : 0,
     };
   });
-
-  // ── Notification paiement (après transaction réussie) ─────────────────────
-  const ctx = result.context as any;
+ 
+  // ── Notifications ─────────────────────────────────────────────────────────
+  const ctx           = result.context as any;
   const methodLabel   = METHOD_LBL[input.method] ?? input.method;
   const deptLabel     = DEPT_LBL[input.department] ?? input.department;
   const changeInfo    = ctx?.change > 0 ? ` · Monnaie : ${fmt(ctx.change)} Ar` : "";
@@ -239,16 +259,12 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
   const folioInfo     = ctx?.type === "folio"
     ? ` · Folio solde : ${fmt(ctx.balance)} Ar${ctx.closed ? " (clos)" : ""}`
     : "";
-
-  // Cible : admin, manager, cashier + l'opérateur lui-même si différent
-  const notifTargetRoles = ["admin", "manager", "cashier"];
-
-  // Notification principale (rôles caisse/admin)
+ 
   pushNotification({
     event: "payment",
     title: `💳 Paiement reçu — ${deptLabel}`,
     body: `${fmt(input.amount)} Ar via ${methodLabel}${cardFeeInfo}${changeInfo}${remainingInfo}${folioInfo}`,
-    targetRoles: notifTargetRoles,
+    targetRoles: ["admin", "manager", "cashier"],
     meta: {
       paymentId:  result.payment.id,
       amount:     input.amount,
@@ -265,8 +281,7 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
       operatorName,
     },
   }).catch(() => {});
-
-  // Notification spécifique si folio soldé → réception
+ 
   if (ctx?.type === "folio" && ctx?.closed) {
     pushNotification({
       event: "info",
@@ -276,8 +291,7 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
       meta: { folioId: input.folioId, amount: input.amount, method: input.method },
     }).catch(() => {});
   }
-
-  // Notification si commande entièrement soldée → cuisine/serveur
+ 
   if (ctx?.type === "order" && ctx?.remaining === 0) {
     pushNotification({
       event: "order_closed",
@@ -287,7 +301,7 @@ r.post("/payments", requireScope("payments:write"), async (req, res) => {
       meta: { orderId: input.orderId, total: ctx.total },
     }).catch(() => {});
   }
-
+ 
   res.status(201).json(result);
 });
 

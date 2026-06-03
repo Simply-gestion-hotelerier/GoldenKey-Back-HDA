@@ -36,7 +36,7 @@ export function scopesForRole(role: AppRole | string): Scope[] {
       return [
         "inventory:read","inventory:write","inventory:adjust",
         "rooms:read","reservations:read",
-        "orders:read",
+        "orders:read","orders:write","orders:status",
         "spa:read",
         "payments:read",
         "cash:read","cash:close",

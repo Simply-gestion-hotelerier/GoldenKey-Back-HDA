@@ -71,22 +71,80 @@ r.post("/setup-dishes-items", async (req, res) => {
   }
 });
 
-r.get("/tables", requireScope("orders:read"), async (_req, res) => {
-  const tables = await prisma.diningTable.findMany({
-    where: { department: { in: ["restaurant", "lounge"] } }, // ✅ Modifié: "pub" → "lounge"
-    include: {
-      assignedWaiter: {
-        select: { id: true, name: true, email: true, role: true },
+r.get("/tables", requireScope("orders:read"), async (req, res) => {
+  try {
+    const user = (req as any).user;
+
+    const isAdminOrManager = ["ADMIN", "MANAGER", "RECEPTION"].includes(user.role);
+
+    const tables = await prisma.diningTable.findMany({
+      where: {
+        department: { in: ["restaurant", "lounge"] },
+        // Waiter → seulement ses tables assignées
+        ...(!isAdminOrManager && { assignedWaiterId: user.id }),
       },
-    },
-  });
-  res.json(tables);
+      include: {
+        assignedWaiter: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    res.json(tables);
+
+  } catch (error) {
+    console.error("❌ Erreur GET /tables :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
 r.post("/tables", requireScope("orders:write"), async (req, res) => {
-  const schema = z.object({ code: z.string(), department: z.enum(["restaurant", "lounge"]) }); // ✅ Modifié: "pub" → "lounge"
-  const created = await prisma.diningTable.create({ data: schema.parse(req.body) });
-  res.status(201).json(created);
+  try {
+    const user = (req as any).user;
+
+    const schema = z.object({
+      code: z.string(),
+      department: z.enum(["restaurant"]),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Données invalides", details: parsed.error.flatten() });
+    }
+
+    const existing = await prisma.diningTable.findUnique({
+      where: { code: parsed.data.code },
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        error: `Une table avec le code "${parsed.data.code}" existe déjà`,
+        code: "DUPLICATE_CODE",
+      });
+    }
+
+    const isWaiter = user.role === "WAITER";
+
+    const created = await prisma.diningTable.create({
+      data: {
+        ...parsed.data,
+        // Waiter → assigné automatiquement à lui-même
+        ...(isWaiter && { assignedWaiterId: user.id }),
+      },
+      include: {
+        assignedWaiter: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+    });
+
+    res.status(201).json(created);
+
+  } catch (error) {
+    console.error("❌ Erreur POST /tables :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,8 +291,35 @@ r.get("/waiters/assigned-tables/:waiterId", requireScope("orders:read"), async (
 
 r.patch("/tables/:id", requireScope("orders:write"), async (req, res) => {
   const id = Number(req.params.id);
+
   const schema = z.object({ code: z.string().optional() });
-  const updated = await prisma.diningTable.update({ where: { id }, data: schema.parse(req.body) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Données invalides", details: parsed.error.flatten() });
+  }
+
+  // Si un nouveau code est fourni, vérifier qu'il n'est pas déjà pris par une AUTRE table
+  if (parsed.data.code) {
+    const conflict = await prisma.diningTable.findFirst({
+      where: {
+        code: parsed.data.code,
+        NOT: { id },          // exclure la table en cours de modification
+      },
+    });
+
+    if (conflict) {
+      return res.status(409).json({
+        error: `Le code "${parsed.data.code}" est déjà utilisé par une autre table`,
+        code: "DUPLICATE_CODE",
+      });
+    }
+  }
+
+  const updated = await prisma.diningTable.update({
+    where: { id },
+    data: parsed.data,
+  });
+
   res.json(updated);
 });
 
