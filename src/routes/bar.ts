@@ -80,7 +80,7 @@ r.get("/tables", requireScope("orders:read"), async (req, res) => {
 
     const tables = await prisma.diningTable.findMany({
       where: {
-        department: { in: ["restaurant", "lounge"] },
+        department: { in: ["lounge"] },
         // Waiter → seulement ses tables assignées
         ...(!isAdminOrManager && { assignedWaiterId: user.id }),
       },
